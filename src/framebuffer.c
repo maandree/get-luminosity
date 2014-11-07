@@ -51,6 +51,8 @@ int main()
   height      = var_info.yres;
   inv_width   = 1 / (double)width;
   
+  posix_fadvise(fd, 0, (size_t)(width * height * 4),
+		POSIX_FADV_SEQUENTIAL | POSIX_FADV_NOREUSE | POSIX_FADV_WILLNEED);
   mem = mmap(NULL, (size_t)(width * height * 4), PROT_READ, MAP_SHARED, fd, (off_t)0);
   if (mem == MAP_FAILED)
     return perror("get-luminosity::framebuffer: mmap"), close(fd), 1;
