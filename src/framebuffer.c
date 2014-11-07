@@ -37,9 +37,10 @@ int main()
   long height;
   long y;
   auto int fd;
-  auto const char* restrict mem;
+  register char* restrict mem;
   register double grand_sum = 0;
   double inv_width;
+  size_t ptr, len;
   
   if (fd = open("/dev/fb0", O_RDONLY), fd == -1)
     return perror("get-luminosity::framebuffer: open: /dev/fb0"), close(fd), 1;
@@ -47,24 +48,31 @@ int main()
   if (ioctl(fd, (unsigned long)FBIOGET_VSCREENINFO, &var_info))
     return perror("get-luminosity::framebuffer: ioctl"), close(fd), 1;
   
-  width       = var_info.xres;
-  height      = var_info.yres;
-  inv_width   = 1 / (double)width;
+  width     = var_info.xres;
+  height    = var_info.yres;
+  inv_width = 1 / (double)width;
+  len       = (size_t)(width * height * 4);
   
-  posix_fadvise(fd, 0, (size_t)(width * height * 4),
-		POSIX_FADV_SEQUENTIAL | POSIX_FADV_NOREUSE | POSIX_FADV_WILLNEED);
-  mem = mmap(NULL, (size_t)(width * height * 4), PROT_READ, MAP_SHARED, fd, (off_t)0);
-  if (mem == MAP_FAILED)
-    return perror("get-luminosity::framebuffer: mmap"), close(fd), 1;
+  posix_fadvise(fd, 0, len, POSIX_FADV_SEQUENTIAL | POSIX_FADV_NOREUSE | POSIX_FADV_WILLNEED);
+  if (mem = malloc(len), mem == NULL)
+    return perror("get-luminosity::framebuffer: malloc"), close(fd), 1;
+  for (ptr = 0; ptr < len;)
+    {
+      register ssize_t got = read(fd, mem + ptr, len - ptr);
+      if (got <= 0)
+	return perror("get-luminosity::framebuffer: read"), close(fd), free(mem), 1;
+      ptr += (size_t)got;
+    }
+  close(fd);
   
   for (y = 0; y < height; y++)
     {
       register const int32_t* restrict linemem = (const int32_t*)(mem + y * width * 4);
       register const int32_t* restrict end     = linemem + width;
-      double sum = 0;
+      register double sum = 0;
       while (linemem != end)
 	{
-	  int32_t value = *linemem++;
+	  register int32_t value = *linemem++;
 	  sum += linearise(value, 0) + linearise(value, 1) + linearise(value, 2);
 	}
       grand_sum += sum * inv_width;
@@ -74,7 +82,7 @@ int main()
   fprintf(stderr, "%lf\n", (double)grand_sum);
   fflush(stdout);
   
-  close(fd);
+  free(mem);
   return 0;
 }
 
